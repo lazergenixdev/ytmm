@@ -33,63 +33,37 @@ jobs:
         mkdir -p "dist-${{ matrix.os }}"
         mv dist/* "dist-${{ matrix.os }}/"
 
-    - name: Zip the build artifacts
-      run: |
-        zip -r "dist-${{ matrix.os }}.zip" "dist-${{ matrix.os }}/"
-
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: "dist-${{ matrix.os }}.zip"
         path: "dist-${{ matrix.os }}.zip"
 
+
   upload:
     needs: build
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]  # Use the same platforms
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download build artifacts
+    - name: Download build artifact
       uses: actions/download-artifact@v4
       with:
-        name: dist-ubuntu-latest.zip
-        path: dist-ubuntu-latest.zip
+        name: "dist-${{ matrix.os }}"
+        path: "dist-${{ matrix.os }}/"
 
-    - name: Download build artifacts macOS
-      uses: actions/download-artifact@v4
-      with:
-        name: dist-macos-latest.zip
-        path: dist-macos-latest.zip
+    - name: Zip build artifact
+      run: |
+        zip -r "dist-${{ matrix.os }}.zip" "dist-${{ matrix.os }}/"
 
-    - name: Download build artifacts Windows
-      uses: actions/download-artifact@v4
-      with:
-        name: dist-windows-latest.zip
-        path: dist-windows-latest.zip
-
-    - name: Upload Release Assets for Ubuntu
+    - name: Upload Release Assets
       uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ github.event.release.upload_url }}
-        asset_path: dist-ubuntu-latest.zip
-        asset_name: dist-ubuntu-latest.zip
-        asset_content_type: application/zip
-
-    - name: Upload Release Assets for macOS
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: dist-macos-latest.zip
-        asset_name: dist-macos-latest.zip
-        asset_content_type: application/zip
-
-    - name: Upload Release Assets for Windows
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: dist-windows-latest.zip
-        asset_name: dist-windows-latest.zip
+        asset_path: "dist-${{ matrix.os }}.zip"
+        asset_name: "dist-${{ matrix.os }}.zip"
         asset_content_type: application/zip
 
