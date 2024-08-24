@@ -6,11 +6,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Change this to your preferred platform or use a matrix
-
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]  # Build for multiple platforms
+        os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
 
     steps:
     - name: Checkout code
@@ -39,9 +39,5 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: ytmm-build
-        path: |
-          dist/
-          build/
-          build/*.spec
+        path: dist/*
 
