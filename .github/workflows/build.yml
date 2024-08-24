@@ -34,7 +34,7 @@ jobs:
       run: |
         ls -R dist/
         ls -R build/
-        ls -l *.spec
+        ls -l build/*.spec
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
@@ -43,5 +43,5 @@ jobs:
         path: |
           dist/
           build/
-          *.spec
+          build/*.spec
 
