@@ -30,6 +30,12 @@ jobs:
       run: |
         python scripts/build.py
 
+    - name: List build artifacts
+      run: |
+        ls -R dist/
+        ls -R build/
+        ls -l *.spec
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
