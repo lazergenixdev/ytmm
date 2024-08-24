@@ -36,8 +36,8 @@ jobs:
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: "dist-${{ matrix.os }}.zip"
-        path: "dist-${{ matrix.os }}.zip"
+        name: "dist-${{ matrix.os }}"
+        path: "dist-${{ matrix.os }}/"
 
 
   upload:
