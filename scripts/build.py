@@ -1,22 +1,20 @@
 import subprocess
-import sys
 import os
+import PyInstaller.__main__
+from clean import clean
 
 def build():
-    # Clean up previous builds
     if os.path.exists('build'):
-        subprocess.run(['python', 'scripts/clean.py'], check=True)
+        clean() # Clean up previous builds
 
-    # Run PyInstaller
-    subprocess.run([
-        'pyinstaller',
+    PyInstaller.__main__.run([
+        'ytmm/__main__.py',
         '--onefile',
-        '--distpath', 'dist',
-        '--workpath', 'build',
-        '--specpath', 'build',
-        'ytmm/cli.py'
-    ], check=True)
+        '--name=ytmm',
+        '--distpath=dist',
+        '--workpath=build',
+        '--specpath=build',
+    ])
 
 if __name__ == '__main__':
     build()
-

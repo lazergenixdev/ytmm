@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+
+# Bin
+dist/
+build/
+
+# Data
+*.mp3
