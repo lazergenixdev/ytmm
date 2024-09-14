@@ -5,11 +5,14 @@ import shutil
 import concurrent.futures
 import yt_dlp
 #import ffmpeg
+from wcwidth import wcswidth as width
+from re import compile as regex
+from pathlib import Path
 from . import output
 from .utils import (
     file_name_from_title,
     parse_title,
-    progress_bar
+    progress_bar,
 )
 
 DEFAULT_ROOT = "music"
@@ -74,6 +77,15 @@ class YoutubeMM:
 
             self.download(self.entries)
             return
+
+        filenames = [file_name_from_title(entry['title']) for entry in self.entries]
+
+        # Find files that do not belong
+        for root, folders, files in os.walk(self.root):
+            for f in files:
+                if Path(f).stem not in filenames:
+                    if output.ask(f'Remove "{f}"?'):
+                        os.remove(os.path.join(root, f))
 
         entries = []
         # Only download what does not exist
@@ -150,10 +162,84 @@ class YoutubeMM:
             output.status(error)
 
 
+    def query(self, title_pattern, artist_pattern):
+        AW = 24
+        def j(s,n):
+            if width(s) > n:
+                w = [width(c) for c in s]
+                end = 0
+                for i,l in enumerate(w):
+                    end += l
+                    if end > n-2:
+                        return s[0:i] + '..';
+            return s + ' ' * max(0, n-width(s))
+        def s(i,e):
+            return "{5:>4}  {0}{4}{3}{4}{1}{4}{2:<50}".format(e['id'],j(', '.join(e['artists']),AW),e['title'],e['year'] if 'year' in e else '    ','   ',i)
+        #self.entries.sort(key=lambda e: e['artists'][0].casefold())
 
-    def remove(self, _):
-        output.status("not implemented :(")
-        pass
+        if title_pattern or artist_pattern:
+            filtered = []
+            re_title  = regex(title_pattern)  if title_pattern else None
+            re_artist = regex(artist_pattern) if artist_pattern else None
+            for entry in self.entries:
+                if title_pattern and re_title.search(entry['title']):
+                    filtered.append(entry)
+                    continue
+                if artist_pattern:
+                    for a in entry['artists']:
+                        if re_artist.search(a):
+                            filtered.append(entry)
+                            break
+        else:
+            filtered = self.entries
+
+        filtered.sort(key=lambda e: int(e['year']) if 'year' in e else 0)
+        # header
+        #print(s('',{'id': 'id'.ljust(11), 'artists': ['artists'], 'title': 'title', 'year': 'year'}))
+        #print(s('',{'id': '-' * 11, 'artists': ['-' * AW], 'title': '-'*50, 'year': '-'*4}))
+        # body
+        [print(s(i+1,entry)) for i,entry in enumerate(filtered)]
+
+
+    def remove(self, title_pattern: str, artist_pattern: str | None):
+        output.status("looking for music...")
+
+        filtered = []
+        re_title  = regex(title_pattern)
+        re_artist = regex(artist_pattern) if artist_pattern else None
+        for entry in self.entries:
+            if title_pattern and re_title.search(entry['title']):
+                filtered.append(entry)
+                continue
+            if artist_pattern:
+                for a in entry['artists']:
+                    if re_artist.search(a):
+                        filtered.append(entry)
+                        break
+
+        filtered.sort(key=lambda e: e['title'].casefold())
+
+        output.section("Music to remove:")
+        for entry in filtered:
+            output.status(file_name_from_title(entry['title']), end=' ')
+        print('\n')
+        
+        if not output.ask("Proceed?"): return
+
+        # This is dumb
+        def keep(entry):
+            for f in filtered:
+                if entry['id'] == f['id']:
+                    file_name = file_name_from_title(entry['title']) + '.mp3'
+                    path = os.path.join(self.root, file_name)
+                    if os.path.exists(path):
+                        os.remove(path)
+                        output.status(f"removed {file_name}...")
+                    return False
+            return True
+
+        self.entries = list(filter(keep, self.entries))
+        self.modified = True
 
 
     def download(self, entries):
@@ -249,12 +335,14 @@ class YoutubeMM:
             def error(self, msg):
                 tracker.save_error(msg)
 
-        #actions = []
-        #if parse_title:
-        #    actions.append((
-        #        yt_dlp.postprocessor.metadataparser.MetadataParserPP.interpretter,
-        #        'title', '%(artist)s - %(title)s'
-        #    ))
+        actions = []
+        if parse_title:
+            actions.append((
+                yt_dlp.postprocessor.metadataparser.MetadataParserPP.replacer,
+                'year',
+                '.*',
+                '%(release_year)s',
+            ))
 
         def progress_hook(d):
             self.progress_hook(tracker, d)
@@ -338,7 +426,7 @@ class YoutubeMM:
             progress = d['downloaded_bytes']/d['total_bytes']
             w,_ = os.get_terminal_size()
             output.concurrent(index, f"{1+index:3} {file_name_from_title(entry['title']):36} {progress_bar(progress, w=(w-42))}")
-        if d['status'] == 'finished':
+        elif d['status'] == 'finished':
             entry = _info_to_entry(d['info_dict'])
             w,_ = os.get_terminal_size()
             output.concurrent(index, f"{1+index:3} {file_name_from_title(entry['title']):36} {progress_bar(1.0, w=(w-42))}")

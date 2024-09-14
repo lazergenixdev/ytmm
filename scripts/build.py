@@ -14,6 +14,7 @@ def build():
         '--distpath=dist',
         '--workpath=build',
         '--specpath=build',
+        '--optimize=2',
     ])
 
 if __name__ == '__main__':

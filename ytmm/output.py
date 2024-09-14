@@ -1,19 +1,11 @@
 from re import compile as regex
 
-def __cprint(color, msg, **kwargs):
-    print(f"{color}{msg}\033[0m", **kwargs)
-
 def status(*values, **kwargs):
     print('', *values, **kwargs)
 
 def error(*values, **kwargs):
     __cprint('\033[31m', " error", end=' ')
     print(':', *values, **kwargs)
-
-re_log = regex(r'^\[.*\] ')
-
-def yt_dlp_status(msg):
-    print(' -->', re_log.sub('', msg))
 
 def section(msg, **kwargs):
     __cprint('\033[36m', "::", end=' ')
@@ -28,6 +20,12 @@ def file(s: str):
 
 def special(s: str):
     return f'\033[93m"{s}"\033[0m'
+
+
+""" ============ Color Printing =========== """
+
+def __cprint(color, msg, **kwargs):
+    print(f"{color}{msg}\033[0m", **kwargs)
 
 
 """ ========= Concurrent Printing ========= """
