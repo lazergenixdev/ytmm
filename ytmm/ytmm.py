@@ -12,10 +12,20 @@ from . import output
 from .utils import (
     file_name_from_title,
     parse_title,
-    progress_bar,
 )
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TimeElapsedColumn,
+    TextColumn,
+    BarColumn,
+    TaskProgressColumn,
+)
+from rich.prompt import Confirm
+import time
 
-DEFAULT_ROOT = "music"
+DEFAULT_DATABASE = 'music.json'
+DEFAULT_ROOT     = 'music'
 
 """
 Entry:
@@ -27,27 +37,72 @@ Entry:
     'path':    str        [optional] (defaults to root)
 """
 
-class ProgressTracker:
-    def __init__(self, urls):
-        self.urls = urls
-        self.tracked = dict()
-        self.errors = []
+def filter_entries(entries, title_pattern: str | None, artist_pattern: str | None):
+    if not (title_pattern or artist_pattern):
+        return entries
     
-    def index(self, _id):
-        for i, url in enumerate(self.urls):
-            if _id in url:
-                return i
-        return -1
+    filtered = []
+    re_title  = regex(title_pattern)  if title_pattern else None
+    re_artist = regex(artist_pattern) if artist_pattern else None
+    for entry in entries:
+        add = False
+        if title_pattern:
+            if re_title.search(entry['title']):
+                add = True
+        else: 
+            add = True
+        
+        if artist_pattern:
+            add_artist = False
+            for a in entry['artists']:
+                if re_artist.search(a):
+                    add_artist = True
+                    break
+            add = add and add_artist
+        
+        if add:
+            filtered.append(entry)
+    return filtered
+
+
+def find_database(database):
+    dirs = []
+    for file in os.listdir('.'):
+        if os.path.isdir(file):
+            if file != DEFAULT_ROOT:
+                dirs.append(file)
+        else:
+            if file == DEFAULT_DATABASE:
+                return file
+
+    for root in dirs:
+        for file in os.listdir(root):
+            path = os.path.join(root, file)
+            if os.path.isdir(path): continue
+            if file == DEFAULT_DATABASE:
+                return path
+
+    return None
+
+class ProgressTracker:
+    def __init__(self, n, progress: Progress):
+        self.progress = progress
+        self.n = n
+        self.errors = []
     
     def save_error(self, error):
         self.errors.append(error)
 
+#class Task:
+#    def __init__(self)
+#        self.task_id = Progress.Tas
+
 
 class YoutubeMM:
-    def __init__(self, database_file="db.json"):
+    def __init__(self, database=DEFAULT_DATABASE):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
-        self.file = database_file
+        self.file = find_database(database)
         self.modified = False
         #self.logger.info("database file: %s", database_file)
 
@@ -60,7 +115,7 @@ class YoutubeMM:
             self.save_to(self.file)
 
 
-    def sync(self, output_dir):
+    def sync(self, output_dir: str | None, title_pattern: str | None, artist_pattern: str | None):
         if output_dir:
             self.root = output_dir
         output.section(f'Syncronizing music files...')
@@ -69,7 +124,7 @@ class YoutubeMM:
         if not os.path.exists(self.root):
             output.status(f'root {output.file(self.root)} not found')
             
-            if not output.ask(f"Create new root directory?"):
+            if not Confirm.ask(f"Create new [b]root[/b] directory?", default=True):
                 return
             
             output.status("creating directory...")
@@ -78,22 +133,41 @@ class YoutubeMM:
             self.download(self.entries)
             return
 
-        filenames = [file_name_from_title(entry['title']) for entry in self.entries]
+        filenames = []
+        ids = []
+        id_to_index = dict()
+
+        for i, entry in enumerate(self.entries):
+            filenames.append(file_name_from_title(entry['title']))
+            ids.append(entry['id'])
+            id_to_index[entry['id']] = i
 
         # Find files that do not belong
         for root, folders, files in os.walk(self.root):
             for f in files:
-                if Path(f).stem not in filenames:
+                stem = Path(f).stem
+                if stem not in filenames:
+                    # Check if music was downloaded but needs renaming
+                    if os.path.splitext(f)[1] == '.mp3' and stem in id_to_index:
+                        entry = self.entries[id_to_index[stem]]
+                        self._rename_entry(entry)
+                        output.status(output.color.blue("repaired"), stem, '=>', entry['title'])
+                        continue
+                    
                     if output.ask(f'Remove "{f}"?'):
                         os.remove(os.path.join(root, f))
 
+        # Filter by given patterns 
+        filtered = filter_entries(self.entries, title_pattern, artist_pattern)
+
         entries = []
         # Only download what does not exist
-        for entry in self.entries:
+        for entry in filtered:
             file_name = f"{file_name_from_title(entry['title'])}.mp3"
             path = os.path.join(self.root, file_name)
+
             if not os.path.exists(path):
-                output.status(file_name, "not found")
+                output.status(output.color.red("missing"), file_name)
                 entries.append(entry)
 
         if not entries:
@@ -106,7 +180,7 @@ class YoutubeMM:
             output.status(file_name_from_title(entry['title']), end=' ')
         print('\n')
 
-        if not output.ask("Proceed to download?"): return
+        if not Confirm.ask("[cyan]::[/] Proceed to download?"): return
 
         self.download(entries)
 
@@ -139,8 +213,9 @@ class YoutubeMM:
 
         output.section("Downloading music...")
 
-        def download(url: str, index: int):
-            info = d.extract_info(url, download=True)
+        def download(url: str, task_id, index: int):
+            progress.update(task_id, visible=True)
+            info = d.extract_info(url, download=True, extra_info={'ytmm_task_id': task_id})
             new_entry = _info_to_entry(info)
             self._rename_entry(new_entry)
         
@@ -148,21 +223,48 @@ class YoutubeMM:
                 self.entries[index] = new_entry
             else:
                 self.entries.append(new_entry)
+
             self.modified = True
+            progress.update(task_id, advance=1)
             
-        tracker = ProgressTracker([url for url,_ in download_list])
-        with self.downloader(tracker) as d:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                for url, index in download_list:
-                    executor.submit(download, url, index)
-                executor.shutdown()
-                output.concurrent(len(urls), '') # reset cursor
+        with Progress (
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(None),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            expand=True
+        ) as progress:
+            tracker = ProgressTracker(len(download_list), progress)
+            with self.downloader(tracker) as d:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    for url, index in download_list:
+                        task_id = progress.add_task(url, start=False, total=None, visible=False)
+                        executor.submit(download, url, task_id, index)
+                    total_taskid = progress.add_task('Total', total=None)
+                    tracker.totalid = total_taskid
+                    executor.shutdown()
+                tracker.progress.update(tracker.totalid, completed=100)
         
-        for error in tracker.errors:
-            output.status(error)
+            for error in tracker.errors:
+                output.status(error)
 
 
-    def query(self, title_pattern, artist_pattern):
+    def query(self, title_pattern, artist_pattern, downloaded: bool | None = None):
+        # TODO: Print less info is terminal width is small (Title > Artists > Year > ID)
+
+        CURRENT_YEAR = time.localtime().tm_year
+
+        def color_year(year):
+            if year >= CURRENT_YEAR:
+                return RED
+            elif year >= CURRENT_YEAR-2:
+                return ORANGE
+            elif year >= CURRENT_YEAR-5:
+                return YELLOW
+            elif year >= CURRENT_YEAR-5:
+                return WHITE
+
         AW = 24
         def j(s,n):
             if width(s) > n:
@@ -177,23 +279,18 @@ class YoutubeMM:
             return "{5:>4}  {0}{4}{3}{4}{1}{4}{2:<50}".format(e['id'],j(', '.join(e['artists']),AW),e['title'],e['year'] if 'year' in e else '    ','   ',i)
         #self.entries.sort(key=lambda e: e['artists'][0].casefold())
 
-        if title_pattern or artist_pattern:
-            filtered = []
-            re_title  = regex(title_pattern)  if title_pattern else None
-            re_artist = regex(artist_pattern) if artist_pattern else None
-            for entry in self.entries:
-                if title_pattern and re_title.search(entry['title']):
-                    filtered.append(entry)
-                    continue
-                if artist_pattern:
-                    for a in entry['artists']:
-                        if re_artist.search(a):
-                            filtered.append(entry)
-                            break
+        def downloaded_eq(value: bool):
+            def fn(entry):
+                return os.path.isfile(self.entry_path(entry)) == value
+            return fn
+
+        if downloaded is not None:
+            filtered = list(filter(downloaded_eq(downloaded), self.entries))
         else:
             filtered = self.entries
-
+        filtered = filter_entries(filtered, title_pattern, artist_pattern)
         filtered.sort(key=lambda e: int(e['year']) if 'year' in e else 0)
+
         # header
         #print(s('',{'id': 'id'.ljust(11), 'artists': ['artists'], 'title': 'title', 'year': 'year'}))
         #print(s('',{'id': '-' * 11, 'artists': ['-' * AW], 'title': '-'*50, 'year': '-'*4}))
@@ -204,19 +301,7 @@ class YoutubeMM:
     def remove(self, title_pattern: str, artist_pattern: str | None):
         output.status("looking for music...")
 
-        filtered = []
-        re_title  = regex(title_pattern)
-        re_artist = regex(artist_pattern) if artist_pattern else None
-        for entry in self.entries:
-            if title_pattern and re_title.search(entry['title']):
-                filtered.append(entry)
-                continue
-            if artist_pattern:
-                for a in entry['artists']:
-                    if re_artist.search(a):
-                        filtered.append(entry)
-                        break
-
+        filtered = filter_entries(self.entries, title_pattern, artist_pattern)
         filtered.sort(key=lambda e: e['title'].casefold())
 
         output.section("Music to remove:")
@@ -245,24 +330,34 @@ class YoutubeMM:
     def download(self, entries):
         output.section("Retrieving music...")
 
-        urls = [entry['id'] for entry in entries]
-        
-        tracker = ProgressTracker(urls)
-
-        def download(url):
-            return d.download(url)
-
-        with self.downloader(tracker) as d:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                #[download(url) for url in urls]
-                for url in urls:
-                    executor.submit(download, url)
-                executor.shutdown()
-                output.concurrent(len(urls), '') # reset cursor
-
-        for entry in entries:
+        def download(i, task_id):
+            entry = entries[i]
+            extra = {'ytmm_task_id': task_id, 'index': i}
+            progress.update(task_id, visible=True)
+            d.extract_info(entry['id'], download=True, extra_info=extra)
             self._rename_entry(entry)
-        
+            progress.update(task_id, advance=1)
+
+        with Progress (
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(None),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            expand=True
+        ) as progress:
+            tracker = ProgressTracker(len(entries), progress)
+            with self.downloader(tracker) as d:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    for i in range(len(entries)):
+                        task_id = progress.add_task(entries[i]['title'], start=False, total=None, visible=False)
+                        executor.submit(download, i, task_id)
+                    total_taskid = progress.add_task('Total', total=None)
+                    tracker.totalid = total_taskid
+                    executor.shutdown()
+                tracker.progress.update(tracker.totalid, completed=100)
+
+
 
     def load(self):
         if os.path.exists(self.file):
@@ -305,6 +400,9 @@ class YoutubeMM:
         _from = os.path.join(self.root, _from)
         _to   = os.path.join(self.root, _to)
         shutil.move(_from, _to)
+
+    def entry_path(self, entry):
+        return os.path.join(self.root, f"{file_name_from_title(entry['title'])}.mp3")
 
     def downloader(self, tracker: ProgressTracker):
         class MyLogger:
@@ -420,18 +518,20 @@ class YoutubeMM:
                        (with status "finished") if the download is successful.
     """
     def progress_hook(self, tracker: ProgressTracker, d: dict):
-        index = tracker.index(d['info_dict']['id'])
+        task_id = d['info_dict']['ytmm_task_id']
         if d['status'] == 'downloading':
             entry = _info_to_entry(d['info_dict'])
-            progress = d['downloaded_bytes']/d['total_bytes']
-            w,_ = os.get_terminal_size()
-            output.concurrent(index, f"{1+index:3} {file_name_from_title(entry['title']):36} {progress_bar(progress, w=(w-42))}")
+            downloaded = d['downloaded_bytes']
+            total      = d['total_bytes']
+            tracker.progress.start_task(task_id)
+            tracker.progress.update(task_id, completed=downloaded, total=total+1, description=entry['title'])
+            if tracker.totalid is not None:
+                p = sum(t.percentage for t in tracker.progress.tasks[:-1])/tracker.n
+                tracker.progress.update(tracker.totalid, completed=p, total=100)
         elif d['status'] == 'finished':
-            entry = _info_to_entry(d['info_dict'])
-            w,_ = os.get_terminal_size()
-            output.concurrent(index, f"{1+index:3} {file_name_from_title(entry['title']):36} {progress_bar(1.0, w=(w-42))}")
+            pass
         elif d['status'] == 'error':
-            output.concurrent(index, f"{d['status']}")
+            tracker.progress.stop_task(task_id)
 
     
 # (debug help) python -m yt_dlp ID --no-download --write-info-json

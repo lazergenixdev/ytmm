@@ -4,18 +4,23 @@ import sys
 from .ytmm import YoutubeMM
 
 def create_parser():
+    def add_filters(parser):
+        parser.add_argument('-i', action='store_true', help='case insensitive')
+        parser.add_argument('-T', '--title',  metavar='PATTERN', help='pattern to filter by music title')
+        parser.add_argument('-A', '--artist', metavar='PATTERN', help='pattern to filter by music artist')
+
     parser = argparse.ArgumentParser(description="YouTube Music Manager (v0.1.0)")
     subparsers = parser.add_subparsers(dest='command')
 
     # Sync command
     sync_parser = subparsers.add_parser('sync', help='sync from database to directory')
     sync_parser.add_argument('-o', '--output', type=str, default=None, help='Output directory')
+    add_filters(sync_parser)
 
     # Query command
     query_parser = subparsers.add_parser('query', help='query music from database')
-    query_parser.add_argument('-i', action='store_true', help='case insensitive')
-    query_parser.add_argument('-T', '--title',  metavar='PATTERN', help='pattern to filter by music title')
-    query_parser.add_argument('-A', '--artist', metavar='PATTERN', help='pattern to filter by music artist')
+    query_parser.add_argument('-D', '--downloaded', action=argparse.BooleanOptionalAction, help='only show [not] downloaded music')
+    add_filters(query_parser)
 
     # Add command
     add_parser = subparsers.add_parser('add', help='add YouTube URL to database')
@@ -39,7 +44,9 @@ def main():
     if args.command != None:
         with YoutubeMM() as ytmm:
             if args.command == 'sync':
-                ytmm.sync(args.output)
+                title_pattern  = '(?i)' + args.title  if args.title  and args.i else args.title
+                artist_pattern = '(?i)' + args.artist if args.artist and args.i else args.artist
+                ytmm.sync(args.output, title_pattern, artist_pattern)
             elif args.command == 'add':
                 #title = args.title
                 #artists = [s.strip() for s in args.artists.split(',')] if args.artists else None
@@ -47,7 +54,7 @@ def main():
             elif args.command == 'query':
                 title_pattern  = '(?i)' + args.title  if args.title  and args.i else args.title
                 artist_pattern = '(?i)' + args.artist if args.artist and args.i else args.artist
-                ytmm.query(title_pattern, artist_pattern)
+                ytmm.query(title_pattern, artist_pattern, args.downloaded)
             elif args.command == 'rm':
                 pattern        = '(?i)' + args.pattern if args.i else args.pattern
                 artist_pattern = '(?i)' + args.artist  if args.artist and args.i else args.artist
