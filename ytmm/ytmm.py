@@ -82,6 +82,43 @@ def find_database(database):
 
     return None
 
+def print_entries(entries):
+    from rich.table import Column, Table
+    from rich import box
+    import time
+
+    CURRENT_YEAR = time.localtime().tm_year
+
+    def mapf(minv, maxv, var):
+        x = (var - minv) / (maxv - minv)
+        return min(max(x, 0), 1)
+
+    def year_color(year: int) -> str:
+        if year >= CURRENT_YEAR-5:
+            x = int(mapf(CURRENT_YEAR-5, CURRENT_YEAR, year)*255)
+            return f'[rgb(255,{255-x},0)]'
+        if year >= CURRENT_YEAR-30:
+            x = int(mapf(CURRENT_YEAR-30, CURRENT_YEAR-5, year)*255)
+            return f'[rgb({x},255,{255-x})]'
+        else:
+            return '[rgb(0,255,255)]'
+
+    table = Table(
+        Column(header="ID",      style="grey39",               no_wrap=True, min_width=11),
+        Column(header="Year",    justify='center',             no_wrap=True, min_width=4),
+        Column(header="Artists", style="italic orchid1",       no_wrap=True, ratio=2),
+        Column(header="Title",   style="medium_spring_green",  no_wrap=True, ratio=3),
+        box=None,
+        expand=True
+    )
+    
+    for i, entry in enumerate(entries):
+        year = f'{year_color(entry['year'])}{entry['year']}' if 'year' in entry else '--'
+        artists = ', '.join(entry['artists'])
+        table.add_row(entry['id'], year, artists, entry['title'])
+
+    console.print(table)
+
 
 
 
@@ -274,34 +311,13 @@ class YoutubeMM:
         title_pattern:  str  | None = None,
         artist_pattern: str  | None = None,
         downloaded:     bool | None = None,
-        files:          bool | None = None,
+        files:          bool = None,
         custom_filter:  Callable[[dict], dict] | None = None
     ) -> None:
         # TODO: Print less info if terminal width is small (Title > Artists > Year > ID)
 
-        import time
-
-        CURRENT_YEAR = time.localtime().tm_year
-
-        def mapf(minv, maxv, var):
-            x = (var - minv) / (maxv - minv)
-            return min(max(x, 0), 1)
-
-        def year_color(year: int) -> str:
-            if year >= CURRENT_YEAR-5:
-                x = int(mapf(CURRENT_YEAR-5, CURRENT_YEAR, year)*255)
-                return f'[rgb(255,{255-x},0)]'
-            if year >= CURRENT_YEAR-30:
-                x = int(mapf(CURRENT_YEAR-30, CURRENT_YEAR-5, year)*255)
-                return f'[rgb({x},255,{255-x})]'
-            else:
-                return '[rgb(0,255,255)]'
-
-        def downloaded_eq(entry):
-            return os.path.isfile(self.entry_path(entry)) == downloaded
-
         if downloaded is not None:
-            filtered = list(filter(downloaded_eq, self.entries))
+            filtered = list(filter(lambda x: self.is_downloaded(x) == downloaded, self.entries))
         else:
             filtered = self.entries
         filtered = filter_entries(filtered, title_pattern, artist_pattern)
@@ -314,24 +330,7 @@ class YoutubeMM:
                 print(self.entry_path(entry))
             return
         
-        from rich.table import Column, Table
-        from rich import box
-
-        table = Table(
-            Column(header="ID",      style="grey39",               no_wrap=True, min_width=11),
-            Column(header="Year",    justify='center',             no_wrap=True, min_width=4),
-            Column(header="Artists", style="italic orchid1",       no_wrap=True, ratio=2),
-            Column(header="Title",   style="medium_spring_green",  no_wrap=True, ratio=3),
-            box=None,
-            expand=True
-        )
-        
-        for i, entry in enumerate(filtered):
-            year = f'{year_color(entry['year'])}{entry['year']}' if 'year' in entry else '--'
-            artists = ', '.join(entry['artists'])
-            table.add_row(entry['id'], year, artists, entry['title'])
-
-        console.print(table)
+        print_entries(filtered)
 
 
 
@@ -394,6 +393,183 @@ class YoutubeMM:
 
 
 
+    def sync_playlists (self) -> None:
+        if not os.path.exists('playlists'):
+            output.status('playlist directory not found')
+            
+            if not output.ask(f"Create new [b]playlist[/b] directory?"):
+                return
+            
+            output.status("creating directory...")
+            os.mkdir('playlists')
+
+        for name, playlist in self.playlists.items():
+            def playlist_entries(playlist):
+                filtered = []
+                for entry in self.entries:
+                    if entry['id'] in playlist and not self.is_downloaded(entry):
+                        filtered.append(entry)
+                return filtered
+            
+            need_download = playlist_entries(playlist)
+
+            if len(need_download) > 0:
+                output.status(f'[green1]"{name}"', 'has music that needs downloading')
+            
+            self.save_playlist_to(f'playlists/{name}.m3u', playlist)
+
+
+            
+
+    def add_to_playlist (
+        self,
+        name: str, 
+        title_pattern:  str  | None = None,
+        artist_pattern: str  | None = None,
+        downloaded:     bool | None = None,
+        custom_filter:  Callable[[dict], dict] | None = None
+    ) -> None:
+        playlist = self.playlists[name] if name in self.playlists else []
+
+        filtered = []
+
+        for entry in self.entries:
+            if entry['id'] not in playlist:
+                filtered.append(entry)
+        
+        if downloaded is not None:
+            filtered = list(filter(lambda x: self.is_downloaded(x) == downloaded, filtered))
+
+        filtered = filter_entries(filtered, title_pattern, artist_pattern)
+        
+        if custom_filter:
+            filtered = custom_filter(filtered)
+
+        if len(filtered) == 0:
+            output.status('nothing to do')
+            return
+
+        output.section('Music to add:')
+        for i, entry in enumerate(filtered):
+            output.status(f'[i]{escape(entry['title'])}')
+        print()
+        
+        if not output.ask(f'Add to playlist [medium_spring_green]"{escape(name)}"'):
+            return
+        
+        output.status('adding music to playlist...')
+        [playlist.append(entry['id']) for entry in filtered]
+
+        output.status('updating playlist...')
+        self.playlists[name] = playlist
+        self.modified = True
+
+
+
+
+    def remove_playlist (
+        self,
+        name: str, 
+        title_pattern:  str  | None = None,
+        artist_pattern: str  | None = None,
+        downloaded:     bool | None = None,
+        custom_filter:  Callable[[dict], dict] | None = None
+    ) -> None:
+        if name not in self.playlists:
+            output.status(f'playlist [medium_spring_green]"{escape(name)}"[/] does not exist')
+            return
+
+        playlist = self.playlists[name]
+        filtered = []
+
+        for entry in self.entries:
+            if entry['id'] in playlist:
+                filtered.append(entry)
+        
+        if downloaded is not None:
+            filtered = list(filter(lambda x: self.is_downloaded(x) == downloaded, filtered))
+
+        filtered = filter_entries(filtered, title_pattern, artist_pattern)
+        
+        if custom_filter:
+            filtered = custom_filter(filtered)
+        
+        if len(filtered) == 0:
+            output.status('nothing to do')
+            return
+
+        output.section('Music to remove:')
+        for i, entry in enumerate(filtered):
+            output.status(f'[i]{escape(entry['title'])}')
+        print()
+        
+        if not output.ask(f'Remove from playlist [medium_spring_green]"{escape(name)}"'):
+            return
+        
+        output.status('removing music from playlist...')
+        filtered = [entry['id'] for entry in filtered]
+        playlist = list(filter(lambda x: x not in filtered, playlist))
+
+        output.status('updating playlist...')
+        self.playlists[name] = playlist
+        self.modified = True
+        
+
+
+
+    def query_playlist (
+        self,
+        name: str,
+        files: bool = False,
+    ) -> None:
+        if name not in self.playlists:
+            output.status(f'playlist [medium_spring_green]"{escape(name)}"[/] does not exist')
+            return
+
+        playlist = self.playlists[name]
+        filtered = []
+
+        for entry in self.entries:
+            if entry['id'] in playlist:
+                filtered.append(entry)
+
+        if files:
+            for entry in filtered:
+                print(self.entry_path(entry))
+            return
+
+        print_entries(filtered)
+        
+
+
+
+    def list_playlists (self) -> None:
+        from rich.table import Column, Table
+        from rich import box
+
+        table = Table(
+            Column(header="Count",     style='blue',   no_wrap=True),
+            Column(header="Playlist",  style='green',  no_wrap=True, ratio=1),
+            Column(header="Music",     style='cyan',    no_wrap=True, ratio=4),
+            box=None,
+            expand=True
+        )
+
+        def playlist_titles(playlist):
+            filtered = []
+            for entry in self.entries:
+                if entry['id'] in playlist:
+                    filtered.append(f'"{escape(entry['title'])}"')
+            return filtered
+        
+        for name, playlist in self.playlists.items():
+            music = ', '.join(playlist_titles(playlist))
+            table.add_row(str(len(playlist)), name, music)
+
+        console.print(table)
+
+
+
     def download(self, entries):
         output.section("Retrieving music...")
 
@@ -431,18 +607,28 @@ class YoutubeMM:
         if os.path.exists(self.file):
             try:
                 db = json.load(open(self.file))
+
                 if 'data' in db:
                     self.entries = db['data']
                 else:
-                    output.status("'data' not found, creating empty database...")
+                    output.status("[green1]'data'[/] not found, creating empty database...")
                     self.entries = []
                     self.modified = True
+
                 if 'root' in db:
                     self.root = db['root']
                 else:
-                    output.status("'root' not found, using", output.file(DEFAULT_ROOT))
+                    output.status("[green1]'root'[/] not found, using", output.file(DEFAULT_ROOT))
                     self.root = DEFAULT_ROOT
                     self.modified = True
+
+                if 'playlists' in db:
+                    self.playlists = db['playlists']
+                else:
+                    output.status("[green1]'playlists'[/] not found, creating empty playlist container...")
+                    self.playlists = dict()
+                    self.modified = True
+
             except Exception as e:
                 output.error("Failed to load database")
                 output.error(e)
@@ -460,10 +646,30 @@ class YoutubeMM:
         with open(file, "w") as f:
             output.section("Saving changes...")
             try:
-                json.dump({'root': self.root, 'data': self.entries}, f, indent=4)
+                json.dump({'root': self.root, 'data': self.entries, 'playlists': self.playlists}, f, indent=4)
                 output.status('wrote to database', output.path(self.file))
             except Exception as e:
                 output.error(f'Failed to write to database file ({escape(e)})')
+
+
+
+
+    def save_playlist_to(self, file, playlist: list[str]):
+        music_files = []
+        entry_id_map = dict()
+        for entry in self.entries:
+            entry_id_map[entry['id']] = entry
+
+        for _id in playlist:
+            music_files.append('../' + self.entry_path(entry_id_map[_id]) + '\n')
+
+        with open(file, "w") as f:
+            try:
+                f.write('#EXTM3U\n\n')
+                f.writelines(music_files)
+                output.status('wrote to playlist', output.path(file))
+            except Exception as e:
+                output.error(f'Failed to write to playlist file ({escape(e)})')
 
 
 
@@ -477,6 +683,9 @@ class YoutubeMM:
 
     def entry_path(self, entry):
         return os.path.join(self.root, f"{file_name_from_title(entry['title'])}.mp3")
+    
+    def is_downloaded(self, entry):
+        return os.path.isfile(self.entry_path(entry))
 
     def downloader(self, tracker: ProgressTracker):
         class MyLogger:

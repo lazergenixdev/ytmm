@@ -6,4 +6,5 @@ dist/
 build/
 
 # Data
+*.m3u
 *.mp3
