@@ -45,7 +45,7 @@ def filter_entries(entries, title_pattern: str | None, artist_pattern: str | Non
     # Every match function will need to be fullfilled to add an entry
     match_functions = []
 
-    if re_title:
+    if title_pattern:
         re_title = re.compile(title_pattern)
         def match_title(entry):
             if re_title.search(entry['title']):
@@ -53,7 +53,7 @@ def filter_entries(entries, title_pattern: str | None, artist_pattern: str | Non
             return False
         match_functions.append(match_title)
 
-    if re_artist:
+    if artist_pattern:
         re_artist = re.compile(artist_pattern)
         def match_artists(entry):
             for artist in entry['artists']:
