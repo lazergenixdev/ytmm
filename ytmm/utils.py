@@ -1,10 +1,11 @@
-from re import compile as regex
+import re
 
-re_feat    = regex(r'\(feat\. .*\)')
-re_invalid = regex(r'[^ 0-9A-Za-z_]')
-re_space   = regex(r'\s+')
-re_bracket = regex(r'\[.*\]')
-re_garbage = regex(r'\(Official .*\)|\(From .*\)|\(feat\. .*\)')
+re_feat    = re.compile(r'\(feat\. .*\)')
+re_invalid = re.compile(r'[^ 0-9A-Za-z_]')
+re_space   = re.compile(r'\s+')
+re_bracket = re.compile(r'\[.*\]')
+re_garbage = re.compile(r'\(Official .*\)|\(From .*\)|\(feat\. .*\)')
+
 
 def file_name_from_title(title: str):
     # Remove (feat. {})
@@ -36,8 +37,40 @@ def parse_title(old: str):
     return artists, title
 
 
-def progress_bar(p: float, w=20):
-    p = min(max(p, 0.0), 1.0)
-    w = w - 7
-    n = int(p*w)
-    return f"[{'#'*n}{' '*(w-n)}] {int(p*100):3}%"
+def filter_entries(entries, title_pattern: str | None, artist_pattern: str | None):
+    # No patterns given
+    if not (title_pattern or artist_pattern):
+        return entries
+
+    # Every match function will need to be fullfilled to add an entry
+    match_functions = []
+
+    if re_title:
+        re_title = re.compile(title_pattern)
+        def match_title(entry):
+            if re_title.search(entry['title']):
+                return True
+            return False
+        match_functions.append(match_title)
+
+    if re_artist:
+        re_artist = re.compile(artist_pattern)
+        def match_artists(entry):
+            for artist in entry['artists']:
+                if re_artist.search(artist):
+                    return True
+            return False
+        match_functions.append(match_artists)
+
+    filtered = []
+    for entry in entries:
+        matched = True
+        for match in match_functions:
+            if not match(entry):
+                matched = False
+                break
+        
+        if matched:
+            filtered.append(entry)
+        
+    return filtered

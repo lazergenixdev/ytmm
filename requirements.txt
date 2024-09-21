@@ -1,4 +1,3 @@
 pyinstaller
 yt-dlp
-wcwidth
 rich

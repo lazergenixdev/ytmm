@@ -1,18 +1,14 @@
-import logging
-import json
-import os
-import shutil
+import logging, json, os, shutil, re
 import concurrent.futures
 import yt_dlp
-#import ffmpeg
-from wcwidth import wcswidth as width
-from re import compile as regex
-from pathlib import Path
-from . import output
 from .utils import (
     file_name_from_title,
     parse_title,
+    filter_entries,
 )
+from rich.markup import escape
+from rich.console import Console
+from rich.prompt import Confirm, Prompt
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -21,48 +17,50 @@ from rich.progress import (
     BarColumn,
     TaskProgressColumn,
 )
-from rich.prompt import Confirm
-import time
+from collections.abc import Callable
 
 DEFAULT_DATABASE = 'music.json'
 DEFAULT_ROOT     = 'music'
+
+console = Console(highlight=False)
+
+def line_text(text: str, width: int) -> str:
+    k = max(width,0) - len(text) - 2
+    left  = '-'*(k//2)
+    right = '-'*(k-k//2)
+    return f'{left} {text} {right}'
 
 """
 Entry:
     'id':      str,
     'title':   str,
-    'artists': list[str], [optional]
+    'artists': list[str],
     'album':   str,       [optional]
     'year':    int,       [optional]
     'path':    str        [optional] (defaults to root)
 """
 
-def filter_entries(entries, title_pattern: str | None, artist_pattern: str | None):
-    if not (title_pattern or artist_pattern):
-        return entries
-    
-    filtered = []
-    re_title  = regex(title_pattern)  if title_pattern else None
-    re_artist = regex(artist_pattern) if artist_pattern else None
-    for entry in entries:
-        add = False
-        if title_pattern:
-            if re_title.search(entry['title']):
-                add = True
-        else: 
-            add = True
-        
-        if artist_pattern:
-            add_artist = False
-            for a in entry['artists']:
-                if re_artist.search(a):
-                    add_artist = True
-                    break
-            add = add and add_artist
-        
-        if add:
-            filtered.append(entry)
-    return filtered
+
+class output:
+    def section(*values, **kwargs):
+        console.print('[cyan]::', *values, **kwargs)
+    def status(*values, **kwargs):
+        console.print('', *values, **kwargs)
+    def error(*values, **kwargs):
+        console.print('[red]error[/]:', *values, **kwargs)
+    def path(p):
+        return f'[green1]"{escape(p)}"[/green1]'
+    def ask(q):
+        return Confirm.ask(f'[cyan]::[/] {q}', default=True)
+    def ask_all(q):
+        return Prompt.ask (
+            fr'[cyan]::[/] {q} [prompt.choices]\[y/n/A]',
+            choices=['y','n','a','Y','N','A'],
+            default='A',
+            show_choices=False
+        ).lower()
+
+
 
 
 def find_database(database):
@@ -84,6 +82,9 @@ def find_database(database):
 
     return None
 
+
+
+
 class ProgressTracker:
     def __init__(self, n, progress: Progress):
         self.progress = progress
@@ -93,9 +94,7 @@ class ProgressTracker:
     def save_error(self, error):
         self.errors.append(error)
 
-#class Task:
-#    def __init__(self)
-#        self.task_id = Progress.Tas
+
 
 
 class YoutubeMM:
@@ -115,23 +114,30 @@ class YoutubeMM:
             self.save_to(self.file)
 
 
-    def sync(self, output_dir: str | None, title_pattern: str | None, artist_pattern: str | None):
+
+
+    def sync (
+        self,
+        output_dir: str | None,
+        title_pattern: str | None,
+        artist_pattern: str | None
+    ) -> None:
+        # TODO: audit code
+
         if output_dir:
             self.root = output_dir
-        output.section(f'Syncronizing music files...')
+
+        output.section('Syncronizing music files...')
 
         # Here we need to download everything
         if not os.path.exists(self.root):
-            output.status(f'root {output.file(self.root)} not found')
+            output.status(f'root {output.path(self.root)} not found')
             
-            if not Confirm.ask(f"Create new [b]root[/b] directory?", default=True):
+            if not output.ask(f"Create new [b]root[/b] directory?"):
                 return
             
             output.status("creating directory...")
             os.mkdir(self.root)
-
-            self.download(self.entries)
-            return
 
         filenames = []
         ids = []
@@ -142,6 +148,8 @@ class YoutubeMM:
             ids.append(entry['id'])
             id_to_index[entry['id']] = i
 
+        from pathlib import Path
+
         # Find files that do not belong
         for root, folders, files in os.walk(self.root):
             for f in files:
@@ -151,10 +159,10 @@ class YoutubeMM:
                     if os.path.splitext(f)[1] == '.mp3' and stem in id_to_index:
                         entry = self.entries[id_to_index[stem]]
                         self._rename_entry(entry)
-                        output.status(output.color.blue("repaired"), stem, '=>', entry['title'])
+                        output.status('[cyan]repaired', escape(stem), '=>', escape(entry['title']))
                         continue
                     
-                    if output.ask(f'Remove "{f}"?'):
+                    if Confirm.ask(f'remove [red]"{escape(f)}"[/]?'):
                         os.remove(os.path.join(root, f))
 
         # Filter by given patterns 
@@ -167,7 +175,7 @@ class YoutubeMM:
             path = os.path.join(self.root, file_name)
 
             if not os.path.exists(path):
-                output.status(output.color.red("missing"), file_name)
+                output.status('[red]missing', f'[i]{escape(entry['title'])}')
                 entries.append(entry)
 
         if not entries:
@@ -177,12 +185,14 @@ class YoutubeMM:
         print()
         output.section("Music to download:")
         for entry in entries:
-            output.status(file_name_from_title(entry['title']), end=' ')
+            output.status(escape(file_name_from_title(entry['title'])), end=' ')
         print('\n')
 
-        if not Confirm.ask("[cyan]::[/] Proceed to download?"): return
+        if not output.ask("Proceed to download?"): return
 
         self.download(entries)
+
+
 
 
     def add(self, urls: list):
@@ -192,16 +202,23 @@ class YoutubeMM:
                     return u, url
             return None, None
 
-        replace = [-1 for _ in urls]
         output.status("looking for duplicates...")
+
+        yes_to_all = False
+        replace = [-1 for _ in urls]
         for i, entry in enumerate(self.entries):
             j, url = find(entry['id'])
             if j != None:
-                output.status(f"found {url} as {output.special(entry['title'])}")
-                if output.ask("Replace existing?"):
+                output.status(f'found [u orange1]{escape(url)}[/] as [green1]"{escape(entry['title'])}"')
+
+                if yes_to_all:
                     replace[j] = i
-                else:
-                    replace[j] = None
+                    continue
+
+                match output.ask_all("Replace existing?"):
+                    case 'y': replace[j] = i
+                    case 'n': replace[j] = None
+                    case 'a': replace[j] = i; yes_to_all = True
 
         download_list = []
         # None -> remove
@@ -241,61 +258,109 @@ class YoutubeMM:
                     for url, index in download_list:
                         task_id = progress.add_task(url, start=False, total=None, visible=False)
                         executor.submit(download, url, task_id, index)
-                    total_taskid = progress.add_task('Total', total=None)
+                    total_taskid = progress.add_task('-- Total --', total=None)
                     tracker.totalid = total_taskid
                     executor.shutdown()
                 tracker.progress.update(tracker.totalid, completed=100)
         
-            for error in tracker.errors:
-                output.status(error)
+        for error in tracker.errors:
+            output.error(escape(error.replace('ERROR: ','')))
 
 
-    def query(self, title_pattern, artist_pattern, downloaded: bool | None = None):
-        # TODO: Print less info is terminal width is small (Title > Artists > Year > ID)
+
+
+    def query (
+        self,
+        title_pattern:  str  | None = None,
+        artist_pattern: str  | None = None,
+        downloaded:     bool | None = None,
+        files:          bool | None = None,
+        custom_filter:  Callable[[dict], dict] | None = None
+    ) -> None:
+        # TODO: Print less info if terminal width is small (Title > Artists > Year > ID)
+
+        import time
 
         CURRENT_YEAR = time.localtime().tm_year
 
-        def color_year(year):
-            if year >= CURRENT_YEAR:
-                return RED
-            elif year >= CURRENT_YEAR-2:
-                return ORANGE
-            elif year >= CURRENT_YEAR-5:
-                return YELLOW
-            elif year >= CURRENT_YEAR-5:
-                return WHITE
+        def mapf(minv, maxv, var):
+            x = (var - minv) / (maxv - minv)
+            return min(max(x, 0), 1)
 
-        AW = 24
-        def j(s,n):
-            if width(s) > n:
-                w = [width(c) for c in s]
-                end = 0
-                for i,l in enumerate(w):
-                    end += l
-                    if end > n-2:
-                        return s[0:i] + '..';
-            return s + ' ' * max(0, n-width(s))
-        def s(i,e):
-            return "{5:>4}  {0}{4}{3}{4}{1}{4}{2:<50}".format(e['id'],j(', '.join(e['artists']),AW),e['title'],e['year'] if 'year' in e else '    ','   ',i)
-        #self.entries.sort(key=lambda e: e['artists'][0].casefold())
+        def year_color(year: int) -> str:
+            if year >= CURRENT_YEAR-5:
+                x = int(mapf(CURRENT_YEAR-5, CURRENT_YEAR, year)*255)
+                return f'[rgb(255,{255-x},0)]'
+            if year >= CURRENT_YEAR-30:
+                x = int(mapf(CURRENT_YEAR-30, CURRENT_YEAR-5, year)*255)
+                return f'[rgb({x},255,{255-x})]'
+            else:
+                return '[rgb(0,255,255)]'
 
-        def downloaded_eq(value: bool):
-            def fn(entry):
-                return os.path.isfile(self.entry_path(entry)) == value
-            return fn
+        def downloaded_eq(entry):
+            return os.path.isfile(self.entry_path(entry)) == downloaded
 
         if downloaded is not None:
-            filtered = list(filter(downloaded_eq(downloaded), self.entries))
+            filtered = list(filter(downloaded_eq, self.entries))
         else:
             filtered = self.entries
         filtered = filter_entries(filtered, title_pattern, artist_pattern)
-        filtered.sort(key=lambda e: int(e['year']) if 'year' in e else 0)
+        
+        if custom_filter:
+            filtered = custom_filter(filtered)
 
-        # header
-        #print(s('',{'id': 'id'.ljust(11), 'artists': ['artists'], 'title': 'title', 'year': 'year'}))
-        #print(s('',{'id': '-' * 11, 'artists': ['-' * AW], 'title': '-'*50, 'year': '-'*4}))
-        # body
-        [print(s(i+1,entry)) for i,entry in enumerate(filtered)]
+        if files:
+            for entry in filtered:
+                print(self.entry_path(entry))
+            return
+        
+        from rich.table import Column, Table
+        from rich import box
+
+        table = Table(
+            Column(header="ID",      style="grey39",               no_wrap=True, min_width=11),
+            Column(header="Year",    justify='center',             no_wrap=True, min_width=4),
+            Column(header="Artists", style="italic orchid1",       no_wrap=True, ratio=2),
+            Column(header="Title",   style="medium_spring_green",  no_wrap=True, ratio=3),
+            box=None,
+            expand=True
+        )
+        
+        for i, entry in enumerate(filtered):
+            year = f'{year_color(entry['year'])}{entry['year']}' if 'year' in entry else '--'
+            artists = ', '.join(entry['artists'])
+            table.add_row(entry['id'], year, artists, entry['title'])
+
+        console.print(table)
+
+
+
+
+    def count(self) -> None:
+        from rich.table import Column, Table
+        from rich import box
+
+        table = Table(
+            Column(header="Total ",          style="dodger_blue1", no_wrap=True),
+            Column(header="Downloaded ",     style='green1',       no_wrap=True),
+            Column(header="Not Downloaded ", style="orange_red1",  no_wrap=True),
+            title_style='italic',
+            box=None,
+        )
+        
+        total = len(self.entries)
+
+        def download_mask(entry):
+            if os.path.isfile(self.entry_path(entry)):
+                return 1
+            return 0
+        
+        downloaded = sum(download_mask(entry) for entry in self.entries)
+        table.add_row(str(total), str(downloaded), str(total-downloaded))
+
+        console.print(table)
+
+
 
 
     def remove(self, title_pattern: str, artist_pattern: str | None):
@@ -311,7 +376,7 @@ class YoutubeMM:
         
         if not output.ask("Proceed?"): return
 
-        # This is dumb
+        # TODO: This is very dumb! FIX
         def keep(entry):
             for f in filtered:
                 if entry['id'] == f['id']:
@@ -325,6 +390,8 @@ class YoutubeMM:
 
         self.entries = list(filter(keep, self.entries))
         self.modified = True
+
+
 
 
     def download(self, entries):
@@ -359,6 +426,7 @@ class YoutubeMM:
 
 
 
+
     def load(self):
         if os.path.exists(self.file):
             try:
@@ -385,14 +453,20 @@ class YoutubeMM:
             self.root     = DEFAULT_ROOT
             self.modified = True
 
+
+
+
     def save_to(self, file):
-        with open(file, "w") as out:
+        with open(file, "w") as f:
             output.section("Saving changes...")
             try:
-                json.dump({'root': self.root, 'data': self.entries}, out, indent=4)
-                output.status("wrote to database", output.file(self.file))
-            except:
-                output.error("failed to write to database file")
+                json.dump({'root': self.root, 'data': self.entries}, f, indent=4)
+                output.status('wrote to database', output.path(self.file))
+            except Exception as e:
+                output.error(f'Failed to write to database file ({escape(e)})')
+
+
+
 
     def _rename_entry(self, entry):
         _from = f"{entry['id']}.mp3"
@@ -411,36 +485,16 @@ class YoutubeMM:
                 # You can distinguish them by the prefix '[debug] '
                 if not msg.startswith('[debug] '):
                     return self.info(msg)
-
-                #output.status(msg)
+                pass
 
             def info(self, msg: str):
-                if msg.startswith('[download]'): return
-                if msg.startswith('[ExtractAudio]'):
-                    #tracker.print("Extracting audio...")
-                    return
-                if msg.startswith('[Metadata]'):
-                    #tracker.print("Adding metadata...")
-                    return
-                if 'Downloading' in msg:
-                    #tracker.print(msg[msg.index('Downloading'):])
-                    return
-                #print(msg)
+                pass
 
             def warning(self, msg):
-                pass#output.warning(msg)
+                pass
 
             def error(self, msg):
                 tracker.save_error(msg)
-
-        actions = []
-        if parse_title:
-            actions.append((
-                yt_dlp.postprocessor.metadataparser.MetadataParserPP.replacer,
-                'year',
-                '.*',
-                '%(release_year)s',
-            ))
 
         def progress_hook(d):
             self.progress_hook(tracker, d)
@@ -456,14 +510,8 @@ class YoutubeMM:
             'ignoreerrors': 'only_download',
             'outtmpl': {
                 'default': os.path.join(self.root,'%(id)s.%(ext)s'),
-            #    'pl_thumbnail': ''
             },
             'postprocessors': [
-            #    {
-            #        'key': 'MetadataParser',
-            #        'actions': actions,
-            #        'when': 'pre_process'
-            #    },
                 {
                     'key': 'FFmpegExtractAudio',
                     'nopostoverwrites': False,
@@ -476,10 +524,6 @@ class YoutubeMM:
                     'add_infojson': 'if_exists',
                     'add_metadata': True,
                 },
-            #    {
-            #        'key': 'EmbedThumbnail',
-            #        'already_have_thumbnail': False,
-            #    },
                 {
                     'key': 'FFmpegConcat',
                     'only_multi_video': True,
@@ -487,7 +531,6 @@ class YoutubeMM:
                 }
             ],
             'retries': 10,
-            #'writethumbnail': True
         })
     
     """
@@ -527,11 +570,17 @@ class YoutubeMM:
             tracker.progress.update(task_id, completed=downloaded, total=total+1, description=entry['title'])
             if tracker.totalid is not None:
                 p = sum(t.percentage for t in tracker.progress.tasks[:-1])/tracker.n
-                tracker.progress.update(tracker.totalid, completed=p, total=100)
+                max_width = max(len(t.description) if t.visible else 0 for t in tracker.progress.tasks)
+                tracker.progress.update (
+                    tracker.totalid,
+                    description=line_text('Total', max_width),
+                    completed=p,
+                    total=100
+                )
         elif d['status'] == 'finished':
             pass
         elif d['status'] == 'error':
-            tracker.progress.stop_task(task_id)
+            tracker.progress.remove_task(task_id)
 
     
 # (debug help) python -m yt_dlp ID --no-download --write-info-json
@@ -541,8 +590,14 @@ def _info_to_entry(info: dict):
         new_entry['title']   = info['track']
         new_entry['artists'] = info['artists']
         new_entry['album']   = info['album']
-        if info['release_year'] != None:
+        if info['release_year'] is not None:
             new_entry['year'] = info['release_year']
+        else: # Try and find the year
+            description: str = info['description']
+            if description.startswith('Provided to YouTube'):
+                match = re.search(r"Released on: (?P<year>\d{4}).\d{2}.\d{2}", description)
+                if match:
+                    new_entry['year'] = int(match.group('year'))
     else:
         new_entry['artists'], new_entry['title'] = parse_title(info['title'])
     return new_entry

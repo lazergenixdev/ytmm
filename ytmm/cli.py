@@ -9,8 +9,8 @@ def create_parser():
         parser.add_argument('-T', '--title',  metavar='PATTERN', help='pattern to filter by music title')
         parser.add_argument('-A', '--artist', metavar='PATTERN', help='pattern to filter by music artist')
 
-    parser = argparse.ArgumentParser(description="YouTube Music Manager (v0.1.0)")
-    subparsers = parser.add_subparsers(dest='command')
+    parser = argparse.ArgumentParser(description="YouTube Music Manager (v0.2.0)")
+    subparsers = parser.add_subparsers(metavar="SUBCOMMAND", dest='command')
 
     # Sync command
     sync_parser = subparsers.add_parser('sync', help='sync from database to directory')
@@ -20,6 +20,10 @@ def create_parser():
     # Query command
     query_parser = subparsers.add_parser('query', help='query music from database')
     query_parser.add_argument('-D', '--downloaded', action=argparse.BooleanOptionalAction, help='only show [not] downloaded music')
+    query_parser.add_argument('-F', '--files', action='store_true', help='list files')
+    query_parser.add_argument('-f', '--first', type=int, help='only list the first N songs')
+    query_parser.add_argument('-l', '--last', type=int, help='only list the last N songs')
+    query_parser.add_argument('-n', '--count', action='store_true', help='show number of songs')
     add_filters(query_parser)
 
     # Add command
@@ -54,7 +58,14 @@ def main():
             elif args.command == 'query':
                 title_pattern  = '(?i)' + args.title  if args.title  and args.i else args.title
                 artist_pattern = '(?i)' + args.artist if args.artist and args.i else args.artist
-                ytmm.query(title_pattern, artist_pattern, args.downloaded)
+                def list_filter(entries):
+                    if args.last:  return entries[-args.last:]
+                    if args.first: return entries[:args.first]
+                    return entries
+                if args.count:
+                    ytmm.count()
+                else:
+                    ytmm.query(title_pattern, artist_pattern, args.downloaded, args.files, list_filter)
             elif args.command == 'rm':
                 pattern        = '(?i)' + args.pattern if args.i else args.pattern
                 artist_pattern = '(?i)' + args.artist  if args.artist and args.i else args.artist
