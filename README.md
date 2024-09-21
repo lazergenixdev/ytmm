@@ -1,9 +1,18 @@
-# ytmm
-Commandline Example
+# ytmm - Youtube Music Manager
+
+## [Download Standalone (Windows/Linux/Mac)](https://github.com/lazergenixdev/ytmm/releases/latest)
+
+# Commandline
+Add music to database
 ```sh
-ytmm add L0yOCIqqBWM
+ytmm add https://www.youtube.com/watch?v=XXXXXXXXXXX
 ```
-Embedded Example
+
+Show all music in database
+```sh
+ytmm query
+```
+# Embedded Example
 ```py
 import ytmm
 
