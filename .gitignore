@@ -1,12 +1,12 @@
 .idea/
 
-# Python
-__pycache__/
-
 # Bin
-dist/
-build/
+build.*
+!build.c
+ytmm
+ytmm.*
 
 # Data
 *.m3u
 *.mp3
+*.json
