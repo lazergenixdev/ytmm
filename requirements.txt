@@ -1,3 +1,0 @@
-pyinstaller
-yt-dlp
-rich
