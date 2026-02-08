@@ -7,7 +7,7 @@ re_bracket = re.compile(r'\[.*\]')
 re_garbage = re.compile(r'\(Official .*\)|\(From .*\)|\(feat\. .*\)')
 
 
-def file_name_from_title(title: str):
+def file_name_from_title(title: str, id: str):
     # Remove (feat. {})
     title = re_garbage.sub('', title).strip()
     
@@ -18,7 +18,12 @@ def file_name_from_title(title: str):
     title = re_space.sub(' ', title)
     
     # Final step, lowercase and adding '_'
-    return title.lower().replace(' ', '_')
+    title = title.lower().replace(' ', '_')
+
+    if len(title) == 0:
+        title = id;
+
+    return title;
 
 
 def parse_title(old: str):

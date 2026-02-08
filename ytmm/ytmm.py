@@ -181,7 +181,7 @@ class YoutubeMM:
         id_to_index = dict()
 
         for i, entry in enumerate(self.entries):
-            filenames.append(file_name_from_title(entry['title']))
+            filenames.append(file_name_from_title(entry['title'], entry['id']))
             ids.append(entry['id'])
             id_to_index[entry['id']] = i
 
@@ -208,7 +208,7 @@ class YoutubeMM:
         entries = []
         # Only download what does not exist
         for entry in filtered:
-            file_name = f"{file_name_from_title(entry['title'])}.mp3"
+            file_name = f"{file_name_from_title(entry['title'], entry['id'])}.mp3"
             path = os.path.join(self.root, file_name)
 
             if not os.path.exists(path):
@@ -222,7 +222,7 @@ class YoutubeMM:
         print()
         output.section("Music to download:")
         for entry in entries:
-            output.status(escape(file_name_from_title(entry['title'])), end=' ')
+            output.status(escape(file_name_from_title(entry['title'], entry['id'])), end=' ')
         print('\n')
 
         if not output.ask("Proceed to download?"): return
@@ -370,7 +370,7 @@ class YoutubeMM:
 
         output.section("Music to remove:")
         for entry in filtered:
-            output.status(file_name_from_title(entry['title']), end=' ')
+            output.status(file_name_from_title(entry['title'], entry['id']), end=' ')
         print('\n')
         
         if not output.ask("Proceed?"): return
@@ -379,7 +379,7 @@ class YoutubeMM:
         def keep(entry):
             for f in filtered:
                 if entry['id'] == f['id']:
-                    file_name = file_name_from_title(entry['title']) + '.mp3'
+                    file_name = file_name_from_title(entry['title'], entry['id']) + '.mp3'
                     path = os.path.join(self.root, file_name)
                     if os.path.exists(path):
                         os.remove(path)
@@ -676,13 +676,13 @@ class YoutubeMM:
 
     def _rename_entry(self, entry):
         _from = f"{entry['id']}.mp3"
-        _to   = f"{file_name_from_title(entry['title'])}.mp3"
+        _to   = f"{file_name_from_title(entry['title'], entry['id'])}.mp3"
         _from = os.path.join(self.root, _from)
         _to   = os.path.join(self.root, _to)
         shutil.move(_from, _to)
 
     def entry_path(self, entry):
-        return os.path.join(self.root, f"{file_name_from_title(entry['title'])}.mp3")
+        return os.path.join(self.root, f"{file_name_from_title(entry['title'], entry['id'])}.mp3")
     
     def is_downloaded(self, entry):
         return os.path.isfile(self.entry_path(entry))
