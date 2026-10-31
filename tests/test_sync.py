@@ -62,7 +62,7 @@ class TestWorker(unittest.TestCase):
             d = Path(d)
             cfg = Config(root=d / 'root', role='server', device='server', trash=d / 'trash', fake_delay=0)
             cfg.library_dir.mkdir(parents=True)
-            w = Worker(cfg)
+            w = Worker(cfg, fake=True)
 
             client = Library(cfg.library_dir, 'laptop').load()
             client.put(A, title='Alpha', artists=['X'])

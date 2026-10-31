@@ -144,7 +144,7 @@ def cmd_worker(cfg, args):
     if cfg.role != 'server':
         output.error('the worker only runs on a device with role = "server"')
         return
-    w = Worker(cfg)
+    w = Worker(cfg, fake=True)
     if args.once:
         for line in w.run_once():
             output.status(escape(line))

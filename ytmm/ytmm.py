@@ -175,7 +175,7 @@ class YoutubeMM:
             path = os.path.join(self.root, file_name)
 
             if not os.path.exists(path):
-                output.status('[red]missing', f'[i]{escape(entry['title'])}')
+                output.status('[red]missing', f"[i]{escape(entry['title'])}")
                 entries.append(entry)
 
         if not entries:
@@ -209,7 +209,7 @@ class YoutubeMM:
         for i, entry in enumerate(self.entries):
             j, url = find(entry['id'])
             if j != None:
-                output.status(f'found [u orange1]{escape(url)}[/] as [green1]"{escape(entry['title'])}"')
+                output.status(f"found [u orange1]{escape(url)}[/] as [green1]\"{escape(entry['title'])}\"")
 
                 if yes_to_all:
                     replace[j] = i
@@ -327,7 +327,7 @@ class YoutubeMM:
         )
         
         for i, entry in enumerate(filtered):
-            year = f'{year_color(entry['year'])}{entry['year']}' if 'year' in entry else '--'
+            year = f"{year_color(entry['year'])}{entry['year']}" if 'year' in entry else '--'
             artists = ', '.join(entry['artists'])
             table.add_row(entry['id'], year, artists, entry['title'])
 

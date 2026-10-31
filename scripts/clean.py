@@ -2,7 +2,7 @@ import shutil
 import os
 
 def clean():
-    paths_to_remove = ['dist', 'build', 'ytmm.spec']
+    paths_to_remove = ['dist', '.build', 'ytmm.spec']
     
     for path in paths_to_remove:
         if os.path.isdir(path):

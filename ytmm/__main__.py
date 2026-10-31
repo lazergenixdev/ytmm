@@ -1,4 +1,4 @@
-import ytmm
+from ytmm.cli import main
 
 if __name__ == '__main__':
-    ytmm.main()
+    raise SystemExit(main())

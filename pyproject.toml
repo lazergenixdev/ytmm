@@ -1,21 +1,26 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "ytmm"
-version = "0.1.0"
+version = "2.0.0"
 description = "YouTube Music Manager"
-authors = ["lazergenixdev <lazergenixdev@gmail.com>"]
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "lazergenixdev", email = "lazergenixdev@gmail.com"}]
 license = "MIT"
+license-files = ["LICENSE"]
+dependencies = ["rich>=13", "ytmusicapi>=1.8,<2", "prompt-toolkit>=3.0.43,<4"]
 
-[tool.poetry.dependencies]
-python = "^3.7"
-yt-dlp = "*"
+[project.optional-dependencies]
+server = ["yt-dlp[default]>=2025.11.12", "mutagen>=1.47"]
+testing = ["pytest>=8"]
 
-[tool.poetry.dev-dependencies]
-pytest = "*"
-
-[tool.poetry.scripts]
+[project.scripts]
 ytmm = "ytmm.cli:main"
+ytmm-mvp = "ytmm.mvp:main"
+
+[tool.setuptools.packages.find]
+include = ["ytmm*"]
 

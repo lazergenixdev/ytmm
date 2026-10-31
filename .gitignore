@@ -4,6 +4,9 @@ __pycache__/
 # Bin
 dist/
 build/
+.build/
+*.egg-info/
+.venv/
 
 # Data
 *.mp3
