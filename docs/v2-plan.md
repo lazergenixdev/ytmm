@@ -176,3 +176,29 @@ separately or come with the Docker image.
   reason ffmpeg is required.
 - **How fast should changes show up?** File watching gives seconds, polling gives minutes.
   Polling is simpler and Syncthing already adds some delay.
+
+# Status (2.0.0)
+Milestones 1–6 are done, and from milestone 7 the tags, M3U playlists and `sync --local`.
+Setup and operations are in [server-setup.md](server-setup.md).
+
+How the open questions were settled in code:
+- **MP3:** still the default; `format = "m4a"` (no ffmpeg, no transcoding) or `"opus"` applies
+  to new downloads. Files are matched by ID, so a library can mix formats.
+- **Speed:** polling, but of the modification time every 5 seconds, which costs a few `stat`
+  calls; the inbox is checked every 10 minutes.
+- **Server machine:** still open. Docker and systemd setups are both provided.
+
+Not done yet: the full-screen TUI, and syncing only a subset (e.g. a `phone` tag) to the phone.
+
+Decisions made along the way:
+- yt-dlp runs as a subprocess, so the daily `update_command` upgrades it without restarting the
+  worker. The canary runs right after the update.
+- The server keeps its bookkeeping (which tags each file has, download retries, inbox and
+  canary state) in `~/.local/share/ytmm/state.json`, outside the synced folders.
+- Tombstones keep the song's metadata, so `ytmm restore` can bring a song back; the server then
+  takes the file out of its trash instead of downloading it again.
+- A song newly appearing in the inbox playlist is imported once; deleting it from the library
+  sticks even though it stays in the playlist (unauthenticated playlist reads have no
+  per-item IDs, so "re-added" means it left the playlist and came back).
+- The trash limit can be overridden with `ytmm approve`, which writes `library/approve.json`
+  for the plan the server refused, so even that goes through Syncthing.

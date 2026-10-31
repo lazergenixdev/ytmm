@@ -15,6 +15,7 @@ def build():
         '--workpath=build',
         '--specpath=build',
         '--optimize=2',
+        '--collect-data=ytmusicapi',  # its locale files are loaded at startup
     ])
 
 if __name__ == '__main__':

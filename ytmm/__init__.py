@@ -1,14 +1,12 @@
 __all__ = [
     'main',
-    'YoutubeMM',
+    '__version__',
 ]
 
-# Imported lazily so the sync modules work on devices without yt-dlp
-def __getattr__(name):
-    if name == 'main':
-        from .cli import main
-        return main
-    if name == 'YoutubeMM':
-        from .ytmm import YoutubeMM
-        return YoutubeMM
-    raise AttributeError(name)
+__version__ = '2.0.0'
+
+
+# Imported lazily so `import ytmm` stays cheap
+def main(argv=None):
+    from .cli import main
+    return main(argv)

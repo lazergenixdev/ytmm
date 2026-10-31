@@ -1,5 +1,7 @@
 # Python
 __pycache__/
+*.egg-info/
+.venv/
 
 # Bin
 dist/
@@ -7,3 +9,7 @@ build/
 
 # Data
 *.mp3
+deploy/data/
+
+# OS
+.DS_Store

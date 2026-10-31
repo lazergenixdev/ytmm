@@ -1,0 +1,36 @@
+# The whole server in containers: Syncthing, the ytmm worker and a PO token
+# provider for yt-dlp. From the repository root:
+#   docker compose -f deploy/docker-compose.yml up -d
+# Write deploy/data/config/config.toml first (see docs/server-setup.md), then open
+# Syncthing at http://<server>:8384 and share /var/syncthing/ytmm/library and
+# /var/syncthing/ytmm/music with your devices.
+services:
+  syncthing:
+    image: syncthing/syncthing:latest
+    hostname: ytmm-server
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./data/syncthing:/var/syncthing
+      - ./data/ytmm:/var/syncthing/ytmm
+    ports:
+      - 8384:8384         # web UI
+      - 22000:22000/tcp   # sync
+      - 22000:22000/udp
+      - 21027:21027/udp   # local discovery
+    restart: unless-stopped
+
+  ytmm:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    volumes:
+      - ./data/ytmm:/ytmm       # root = "/ytmm"
+      - ./data/config:/config   # config.toml
+      - ./data/state:/state     # data = "/state": state.json, trash
+    restart: unless-stopped
+
+  bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider
+    restart: unless-stopped

@@ -1,0 +1,12 @@
+.git
+venv
+.venv
+build
+dist
+downloaded
+*.dSYM
+.idea
+.DS_Store
+**/__pycache__
+*.egg-info
+deploy/data

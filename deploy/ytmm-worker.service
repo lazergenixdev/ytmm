@@ -1,0 +1,20 @@
+# systemd user service for the ytmm worker. Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/ytmm-worker.service ~/.config/systemd/user/
+#   systemctl --user enable --now ytmm-worker
+#   sudo loginctl enable-linger "$USER"     # keep it running while you're logged out
+# Logs: journalctl --user -u ytmm-worker -f
+
+[Unit]
+Description=ytmm worker (downloads the songs in library.json)
+
+[Service]
+ExecStart=%h/.local/bin/ytmm worker
+Restart=always
+RestartSec=30
+# Deno (yt-dlp's JavaScript runtime) and uv (for update_command) usually live in your home
+Environment=PATH=%h/.deno/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

@@ -1,21 +1,35 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "ytmm"
-version = "0.1.0"
-description = "YouTube Music Manager"
-authors = ["lazergenixdev <lazergenixdev@gmail.com>"]
+version = "2.0.0"
+description = "YouTube Music Manager: a music library synced with Syncthing and downloaded by a home server"
+readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "lazergenixdev", email = "lazergenixdev@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=13",
+    "prompt_toolkit>=3.0.36",
+    "ytmusicapi>=1.8",
+]
 
-[tool.poetry.dependencies]
-python = "^3.7"
-yt-dlp = "*"
+[project.optional-dependencies]
+# only the server downloads (also needs ffmpeg and Deno, installed separately)
+server = [
+    "yt-dlp[default]",
+    "mutagen>=1.47",
+]
+test = ["pytest"]
 
-[tool.poetry.dev-dependencies]
-pytest = "*"
-
-[tool.poetry.scripts]
+[project.scripts]
 ytmm = "ytmm.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/lazergenixdev/ytmm"
+
+[tool.setuptools.packages.find]
+include = ["ytmm*"]
